@@ -1,0 +1,17 @@
+[phases.setup]
+nixPkgs = [
+  "nodejs_20",
+  "ffmpeg",
+  "chromium",
+  "python3"
+]
+
+[phases.build]
+cmds = [
+  "npm install",
+  "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp",
+  "chmod +x /usr/local/bin/yt-dlp"
+]
+
+[start]
+cmd = "node index.js"
