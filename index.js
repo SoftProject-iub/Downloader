@@ -96,25 +96,62 @@ function cleanTmpDir() {
   }
 }
 
+// ── CHROMIUM AUTO-DETECT ─────────────────────
+
+function findChromium() {
+  // If explicitly set in env, use it (but verify it exists first)
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  if (envPath && fs.existsSync(envPath)) {
+    log.info(`Using chromium from env: ${envPath}`);
+    return envPath;
+  }
+
+  // Common paths on Railway / Nixpacks / Debian / Alpine
+  const candidates = [
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/local/bin/chromium',
+    '/usr/local/bin/chromium-browser',
+    '/snap/bin/chromium',
+    '/nix/var/nix/profiles/default/bin/chromium',
+  ];
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      log.info(`Found chromium at: ${p}`);
+      return p;
+    }
+  }
+
+  // Let puppeteer use its own bundled browser as last resort
+  log.warn('No system chromium found — letting puppeteer use its bundled browser.');
+  return undefined;
+}
+
 // ── CLIENT ───────────────────────────────────
 
 const client = new Client({
   authStrategy : new LocalAuth({
     clientId  : CONFIG.clientId,
-    dataPath  : process.env.SESSION_PATH || '/data/wwebjs_auth',  // Railway persistent volume
+    dataPath  : process.env.SESSION_PATH || '/data/wwebjs_auth',
   }),
   puppeteer : {
-    headless    : true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args        : [
+    headless       : true,
+    executablePath : findChromium(),
+    args           : [
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',       // critical for Railway/Docker
+      '--disable-dev-shm-usage',
       '--disable-gpu',
       '--no-first-run',
       '--no-zygote',
       '--single-process',
       '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-default-apps',
+      '--mute-audio',
     ],
   },
 });
