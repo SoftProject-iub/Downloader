@@ -1,18 +1,13 @@
 [phases.setup]
-nixPkgs = [
-  "nodejs_20",
-  "ffmpeg",
-  "chromium",
-  "python3"
-]
+nixPkgs = ["nodejs_20", "ffmpeg", "python3", "curl"]
+
+[phases.install]
+cmds = ["npm install"]
 
 [phases.build]
 cmds = [
-  "npm install",
   "curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp",
-  "chmod +x /usr/local/bin/yt-dlp",
-  "echo 'Chromium location:' && which chromium || which chromium-browser || echo 'not in PATH'",
-  "find /nix /usr -name 'chromium' -type f 2>/dev/null | head -5 || true"
+  "chmod +x /usr/local/bin/yt-dlp"
 ]
 
 [start]
