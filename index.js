@@ -96,37 +96,57 @@ function cleanTmpDir() {
   }
 }
 
-// ── CHROMIUM AUTO-DETECT ─────────────────────
+// ── CHROMIUM DETECTION ───────────────────────
 
 function findChromium() {
-  // If explicitly set in env, use it (but verify it exists first)
+  // 1. Explicit env override — only if file actually exists AND is executable
   const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-  if (envPath && fs.existsSync(envPath)) {
-    log.info(`Using chromium from env: ${envPath}`);
-    return envPath;
-  }
-
-  // Common paths on Railway / Nixpacks / Debian / Alpine
-  const candidates = [
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/local/bin/chromium',
-    '/usr/local/bin/chromium-browser',
-    '/snap/bin/chromium',
-    '/nix/var/nix/profiles/default/bin/chromium',
-  ];
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      log.info(`Found chromium at: ${p}`);
-      return p;
+  if (envPath) {
+    try {
+      fs.accessSync(envPath, fs.constants.X_OK);
+      log.info('Using chromium from env: ' + envPath);
+      return envPath;
+    } catch {
+      log.warn('PUPPETEER_EXECUTABLE_PATH set but not executable — ignoring: ' + envPath);
     }
   }
 
-  // Let puppeteer use its own bundled browser as last resort
-  log.warn('No system chromium found — letting puppeteer use its bundled browser.');
+  // 2. Puppeteer bundled Chromium — most reliable on Railway
+  try {
+    const puppeteer = require('puppeteer');
+    const bundled = typeof puppeteer.executablePath === 'function'
+      ? puppeteer.executablePath()
+      : puppeteer.executablePath;
+    if (bundled && fs.existsSync(bundled)) {
+      log.info('Using puppeteer bundled Chromium: ' + bundled);
+      return bundled;
+    }
+  } catch (e) {
+    log.warn('Could not resolve puppeteer bundled chromium:', e.message);
+  }
+
+  // 3. Real system paths — SKIP snap stubs (tiny shell wrappers, not real binaries)
+  const candidates = [
+    '/usr/bin/chromium',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/local/bin/chromium',
+  ];
+
+  for (const p of candidates) {
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      const { size } = fs.statSync(p);
+      if (size < 1024) {
+        log.warn('Skipping ' + p + ' — snap stub (' + size + ' bytes)');
+        continue;
+      }
+      log.info('Using system chromium: ' + p);
+      return p;
+    } catch { /* skip */ }
+  }
+
+  log.warn('No chromium found — puppeteer will use its default.');
   return undefined;
 }
 
