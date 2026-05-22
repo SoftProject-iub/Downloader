@@ -16,4 +16,3 @@ cmds = [
 
 [start]
 cmd = "node index.js"
-//
