@@ -14,10 +14,55 @@ const CONFIG = {
   phoneNumber  : process.env.PHONE_NUMBER || '',
   clientId     : process.env.CLIENT_ID    || 'sheezzi-bot',
   ytDlpPath    : process.env.YTDLP_PATH   || '/usr/local/bin/yt-dlp',
-  ffmpegPath   : process.env.FFMPEG_PATH  || '/usr/bin/ffmpeg',
+  ffmpegPath   : process.env.FFMPEG_PATH  || '',   // resolved at runtime
   tmpDir       : process.env.TMP_DIR      || '/tmp/sheezzi',
   progressStep : 25,
 };
+
+// ── TOOL PATH DETECTION ──────────────────────
+
+function findBin(name, candidates) {
+  // env override
+  const envVal = process.env[name.toUpperCase() + '_PATH'];
+  if (envVal) {
+    try { fs.accessSync(envVal, fs.constants.X_OK); return envVal; } catch {}
+  }
+  for (const p of candidates) {
+    try { fs.accessSync(p, fs.constants.X_OK); return p; } catch {}
+  }
+  return null;
+}
+
+function resolvePaths() {
+  const ffmpeg = findBin('ffmpeg', [
+    '/usr/bin/ffmpeg',
+    '/usr/local/bin/ffmpeg',
+    '/nix/var/nix/profiles/default/bin/ffmpeg',
+    '/run/current-system/sw/bin/ffmpeg',
+  ]);
+  const deno = findBin('deno', [
+    '/usr/bin/deno',
+    '/usr/local/bin/deno',
+    '/nix/var/nix/profiles/default/bin/deno',
+    '/run/current-system/sw/bin/deno',
+    '/root/.deno/bin/deno',
+  ]);
+  const ytdlp = findBin('ytdlp', [
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+  ]);
+
+  log.info('ffmpeg  :', ffmpeg  || 'NOT FOUND');
+  log.info('deno    :', deno    || 'NOT FOUND');
+  log.info('yt-dlp  :', ytdlp  || 'NOT FOUND');
+
+  if (!ffmpeg)  log.warn('ffmpeg not found — audio downloads will fail!');
+  if (!ytdlp)   log.warn('yt-dlp not found — all downloads will fail!');
+
+  CONFIG.ffmpegPath = ffmpeg  || 'ffmpeg';
+  CONFIG.ytDlpPath  = ytdlp  || CONFIG.ytDlpPath;
+  CONFIG.denoPath   = deno   || null;
+}
 
 // ── VALIDATE CONFIG ──────────────────────────
 
@@ -240,20 +285,28 @@ async function handleDownload(message, type, query) {
     const ext      = type === 'audio' ? 'mp3' : 'mp4';
     const fileName = path.join(CONFIG.tmpDir, `${type}_${Date.now()}.${ext}`);
 
+    // Build yt-dlp base args
+    const baseArgs = [
+      '--ffmpeg-location', CONFIG.ffmpegPath,
+      '--no-playlist',
+    ];
+    // Add deno JS runtime if available (fixes YouTube extraction warning)
+    if (CONFIG.denoPath) {
+      baseArgs.push('--js-runtimes', 'deno:' + CONFIG.denoPath);
+    }
+
     const args = type === 'audio'
       ? [
-          '--ffmpeg-location', CONFIG.ffmpegPath,
+          ...baseArgs,
           '-x', '--audio-format', 'mp3',
           '--audio-quality', '128K',
-          '--no-playlist',
           '-o', fileName,
           video.url,
         ]
       : [
-          '--ffmpeg-location', CONFIG.ffmpegPath,
+          ...baseArgs,
           '-f', 'bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[ext=mp4][height<=480]/best',
           '--merge-output-format', 'mp4',
-          '--no-playlist',
           '-o', fileName,
           video.url,
         ];
@@ -395,6 +448,7 @@ client.on('message', async (message) => {
 
 async function startBot() {
   log.info('Starting Sheezzi Bot (production)...');
+  resolvePaths();   // detect ffmpeg, yt-dlp, deno paths
   cleanTmpDir();
   ensureTmpDir();
   await client.initialize();
